@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { MockSupplierService } from './mock-supplier.service';
 import { AgentResponse } from './agent.service';
 
@@ -30,126 +30,138 @@ When a user asks to plan a trip:
 Always be helpful, professional, and proactive about safety information.
 Respond in the same language the user writes in.`;
 
-const TOOLS: Anthropic.Messages.Tool[] = [
+const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
-    name: 'search_flights',
-    description:
-      'Search for available flights. Use this when the user wants to find flights between cities.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        origin: {
-          type: 'string',
-          description: 'Departure city or airport code (e.g., "Johannesburg" or "JNB")',
+    type: 'function',
+    function: {
+      name: 'search_flights',
+      description:
+        'Search for available flights. Use this when the user wants to find flights between cities.',
+      parameters: {
+        type: 'object',
+        properties: {
+          origin: {
+            type: 'string',
+            description: 'Departure city or airport code (e.g., "Johannesburg" or "JNB")',
+          },
+          destination: {
+            type: 'string',
+            description: 'Arrival city or airport code (e.g., "Cape Town" or "CPT")',
+          },
+          departure_date: {
+            type: 'string',
+            description: 'Departure date in YYYY-MM-DD format',
+          },
+          return_date: {
+            type: 'string',
+            description: 'Return date in YYYY-MM-DD format (optional for one-way)',
+          },
+          cabin_class: {
+            type: 'string',
+            enum: ['ECONOMY', 'PREMIUM_ECONOMY', 'BUSINESS', 'FIRST'],
+            description: 'Preferred cabin class',
+          },
         },
-        destination: {
-          type: 'string',
-          description: 'Arrival city or airport code (e.g., "Cape Town" or "CPT")',
-        },
-        departure_date: {
-          type: 'string',
-          description: 'Departure date in YYYY-MM-DD format',
-        },
-        return_date: {
-          type: 'string',
-          description: 'Return date in YYYY-MM-DD format (optional for one-way)',
-        },
-        cabin_class: {
-          type: 'string',
-          enum: ['ECONOMY', 'PREMIUM_ECONOMY', 'BUSINESS', 'FIRST'],
-          description: 'Preferred cabin class',
-        },
+        required: ['origin', 'destination', 'departure_date'],
       },
-      required: ['origin', 'destination', 'departure_date'],
     },
   },
   {
-    name: 'search_hotels',
-    description:
-      'Search for available hotels. Use this when the user needs accommodation.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        city: {
-          type: 'string',
-          description: 'City name (e.g., "Cape Town")',
+    type: 'function',
+    function: {
+      name: 'search_hotels',
+      description:
+        'Search for available hotels. Use this when the user needs accommodation.',
+      parameters: {
+        type: 'object',
+        properties: {
+          city: {
+            type: 'string',
+            description: 'City name (e.g., "Cape Town")',
+          },
+          check_in: {
+            type: 'string',
+            description: 'Check-in date in YYYY-MM-DD format',
+          },
+          check_out: {
+            type: 'string',
+            description: 'Check-out date in YYYY-MM-DD format',
+          },
+          max_price_per_night: {
+            type: 'number',
+            description: 'Maximum price per night in ZAR',
+          },
+          min_star_rating: {
+            type: 'number',
+            description: 'Minimum star rating (1-5)',
+          },
         },
-        check_in: {
-          type: 'string',
-          description: 'Check-in date in YYYY-MM-DD format',
-        },
-        check_out: {
-          type: 'string',
-          description: 'Check-out date in YYYY-MM-DD format',
-        },
-        max_price_per_night: {
-          type: 'number',
-          description: 'Maximum price per night in ZAR',
-        },
-        min_star_rating: {
-          type: 'number',
-          description: 'Minimum star rating (1-5)',
-        },
+        required: ['city', 'check_in', 'check_out'],
       },
-      required: ['city', 'check_in', 'check_out'],
     },
   },
   {
-    name: 'search_car_rentals',
-    description:
-      'Search for car rental options. Use this when the user needs a rental car.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        city: {
-          type: 'string',
-          description: 'Pickup city (e.g., "Johannesburg")',
+    type: 'function',
+    function: {
+      name: 'search_car_rentals',
+      description:
+        'Search for car rental options. Use this when the user needs a rental car.',
+      parameters: {
+        type: 'object',
+        properties: {
+          city: {
+            type: 'string',
+            description: 'Pickup city (e.g., "Johannesburg")',
+          },
+          pickup_date: {
+            type: 'string',
+            description: 'Pickup date in YYYY-MM-DD format',
+          },
+          dropoff_date: {
+            type: 'string',
+            description: 'Drop-off date in YYYY-MM-DD format',
+          },
+          vehicle_type: {
+            type: 'string',
+            enum: ['economy', 'compact', 'midsize', 'suv', 'luxury'],
+            description: 'Preferred vehicle type',
+          },
         },
-        pickup_date: {
-          type: 'string',
-          description: 'Pickup date in YYYY-MM-DD format',
-        },
-        dropoff_date: {
-          type: 'string',
-          description: 'Drop-off date in YYYY-MM-DD format',
-        },
-        vehicle_type: {
-          type: 'string',
-          enum: ['economy', 'compact', 'midsize', 'suv', 'luxury'],
-          description: 'Preferred vehicle type',
-        },
+        required: ['city', 'pickup_date', 'dropoff_date'],
       },
-      required: ['city', 'pickup_date', 'dropoff_date'],
     },
   },
   {
-    name: 'get_safety_info',
-    description:
-      'Get safety information and travel advisories for a South African city or area.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        location: {
-          type: 'string',
-          description: 'City or area name',
+    type: 'function',
+    function: {
+      name: 'get_safety_info',
+      description:
+        'Get safety information and travel advisories for a South African city or area.',
+      parameters: {
+        type: 'object',
+        properties: {
+          location: {
+            type: 'string',
+            description: 'City or area name',
+          },
         },
+        required: ['location'],
       },
-      required: ['location'],
     },
   },
 ];
 
 @Injectable()
 export class TripPlannerAgent {
-  private client: Anthropic;
+  private client: OpenAI;
   private readonly logger = new Logger(TripPlannerAgent.name);
 
   constructor(
     private configService: ConfigService,
     private supplierService: MockSupplierService,
   ) {
-    this.client = new Anthropic({
-      apiKey: this.configService.get<string>('ANTHROPIC_API_KEY'),
+    this.client = new OpenAI({
+      apiKey: this.configService.get<string>('OPENAI_API_KEY'),
     });
   }
 
@@ -161,68 +173,58 @@ export class TripPlannerAgent {
       ? `${SYSTEM_PROMPT}\n\nCompany Travel Policy:\n${JSON.stringify(companyPolicy, null, 2)}`
       : SYSTEM_PROMPT;
 
-    const apiMessages: Anthropic.Messages.MessageParam[] = messages.map((m) => ({
-      role: m.role === 'USER' ? 'user' : 'assistant',
-      content: m.content,
-    })) as Anthropic.Messages.MessageParam[];
+    const apiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      { role: 'system', content: systemPrompt },
+      ...messages.map((m) => ({
+        role: (m.role === 'USER' ? 'user' : 'assistant') as 'user' | 'assistant',
+        content: m.content,
+      })),
+    ];
 
     let tripPlanData: AgentResponse['tripPlan'] | undefined;
     const toolCallResults: Array<{ toolName: string; input: Record<string, unknown>; output: unknown }> = [];
 
-    // Agentic loop: keep going until Claude stops calling tools
+    // Agentic loop: keep going until the model stops calling tools
     let currentMessages = [...apiMessages];
     let finalText = '';
 
     for (let i = 0; i < 10; i++) {
-      const response = await this.client.messages.create({
-        model: 'claude-sonnet-4-5',
+      const response = await this.client.chat.completions.create({
+        model: 'gpt-4o',
         max_tokens: 4096,
-        system: systemPrompt,
         tools: TOOLS,
         messages: currentMessages,
       });
 
-      if (response.stop_reason === 'end_turn') {
-        // Extract final text
-        for (const block of response.content) {
-          if (block.type === 'text') {
-            finalText += block.text;
-          }
+      const choice = response.choices[0];
+      const message = choice.message;
+
+      // If no tool calls, we're done
+      if (choice.finish_reason === 'stop' || !message.tool_calls || message.tool_calls.length === 0) {
+        if (message.content) {
+          finalText += message.content;
         }
         break;
       }
 
-      // Process tool use blocks
-      const toolUseBlocks = response.content.filter(
-        (b): b is Anthropic.Messages.ToolUseBlock => b.type === 'tool_use',
-      );
+      // Append assistant message with tool calls
+      currentMessages.push(message);
 
-      if (toolUseBlocks.length === 0) {
-        for (const block of response.content) {
-          if (block.type === 'text') {
-            finalText += block.text;
-          }
-        }
-        break;
-      }
+      // Execute each tool call
+      for (const toolCall of message.tool_calls) {
+        const funcName = toolCall.function.name;
+        const funcArgs = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
 
-      // Append assistant response
-      currentMessages.push({ role: 'assistant', content: response.content });
-
-      // Execute tools and collect results
-      const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
-
-      for (const toolBlock of toolUseBlocks) {
-        const result = await this.executeTool(toolBlock.name, toolBlock.input as Record<string, unknown>);
+        const result = await this.executeTool(funcName, funcArgs);
         toolCallResults.push({
-          toolName: toolBlock.name,
-          input: toolBlock.input as Record<string, unknown>,
+          toolName: funcName,
+          input: funcArgs,
           output: result,
         });
 
         // Extract trip plan data from search results
-        if (toolBlock.name === 'search_flights' && result.flights) {
-          const input = toolBlock.input as Record<string, string>;
+        if (funcName === 'search_flights' && result.flights) {
+          const input = funcArgs as Record<string, string>;
           tripPlanData = {
             ...tripPlanData,
             departureCity: input.origin || '',
@@ -232,41 +234,38 @@ export class TripPlannerAgent {
             flights: result.flights,
           };
         }
-        if (toolBlock.name === 'search_hotels' && result.hotels) {
+        if (funcName === 'search_hotels' && result.hotels) {
           tripPlanData = {
             ...tripPlanData,
-            destination: tripPlanData?.destination || (toolBlock.input as Record<string, string>).city || '',
+            destination: tripPlanData?.destination || (funcArgs as Record<string, string>).city || '',
             departureCity: tripPlanData?.departureCity || '',
-            startDate: tripPlanData?.startDate || (toolBlock.input as Record<string, string>).check_in || '',
-            endDate: tripPlanData?.endDate || (toolBlock.input as Record<string, string>).check_out || '',
+            startDate: tripPlanData?.startDate || (funcArgs as Record<string, string>).check_in || '',
+            endDate: tripPlanData?.endDate || (funcArgs as Record<string, string>).check_out || '',
             hotels: result.hotels,
           };
         }
-        if (toolBlock.name === 'search_car_rentals' && result.carRentals) {
+        if (funcName === 'search_car_rentals' && result.carRentals) {
           tripPlanData = {
             ...tripPlanData,
-            destination: tripPlanData?.destination || (toolBlock.input as Record<string, string>).city || '',
+            destination: tripPlanData?.destination || (funcArgs as Record<string, string>).city || '',
             departureCity: tripPlanData?.departureCity || '',
-            startDate: tripPlanData?.startDate || (toolBlock.input as Record<string, string>).pickup_date || '',
-            endDate: tripPlanData?.endDate || (toolBlock.input as Record<string, string>).dropoff_date || '',
+            startDate: tripPlanData?.startDate || (funcArgs as Record<string, string>).pickup_date || '',
+            endDate: tripPlanData?.endDate || (funcArgs as Record<string, string>).dropoff_date || '',
             carRentals: result.carRentals,
           };
         }
 
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: toolBlock.id,
+        // Send tool result back
+        currentMessages.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
           content: JSON.stringify(result),
         });
       }
 
-      currentMessages.push({ role: 'user', content: toolResults });
-
       // Also extract any text from the response that included tool calls
-      for (const block of response.content) {
-        if (block.type === 'text') {
-          finalText += block.text;
-        }
+      if (message.content) {
+        finalText += message.content;
       }
     }
 
