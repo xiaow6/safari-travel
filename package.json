@@ -1,0 +1,27 @@
+{
+  "name": "safari-travel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-Native Corporate Travel Management Platform for South Africa",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "dev:api": "pnpm --filter @safari-travel/api dev",
+    "dev:web": "pnpm --filter @safari-travel/web dev",
+    "build": "pnpm -r build",
+    "build:api": "pnpm --filter @safari-travel/api build",
+    "build:web": "pnpm --filter @safari-travel/web build",
+    "lint": "pnpm -r lint",
+    "db:generate": "pnpm --filter @safari-travel/api prisma:generate",
+    "db:migrate": "pnpm --filter @safari-travel/api prisma:migrate",
+    "db:push": "pnpm --filter @safari-travel/api prisma:push"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "bcrypt",
+      "prisma",
+      "@prisma/client",
+      "@prisma/engines",
+      "@nestjs/core"
+    ]
+  }
+}

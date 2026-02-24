@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  TRAVELER
+  MANAGER
+  ADMIN
+}
+
+enum ConversationStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum TripPlanStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  BOOKED
+  COMPLETED
+  CANCELLED
+}
+
+enum BookingType {
+  FLIGHT
+  HOTEL
+  CAR_RENTAL
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  FAILED
+}
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  policy    Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+}
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  passwordHash  String
+  name          String
+  role          UserRole       @default(TRAVELER)
+  companyId     String?
+  company       Company?       @relation(fields: [companyId], references: [id])
+  conversations Conversation[]
+  tripPlans     TripPlan[]
+  bookings      Booking[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Conversation {
+  id        String             @id @default(uuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id])
+  title     String             @default("New Conversation")
+  status    ConversationStatus @default(ACTIVE)
+  messages  Message[]
+  tripPlans TripPlan[]
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           MessageRole
+  content        String
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+}
+
+model TripPlan {
+  id             String         @id @default(uuid())
+  conversationId String
+  conversation   Conversation   @relation(fields: [conversationId], references: [id])
+  userId         String
+  user           User           @relation(fields: [userId], references: [id])
+  destination    String
+  departureCity  String
+  startDate      DateTime
+  endDate        DateTime
+  purpose        String         @default("")
+  budget         Float?
+  currency       String         @default("ZAR")
+  flights        Json           @default("[]")
+  hotels         Json           @default("[]")
+  carRentals     Json           @default("[]")
+  totalEstimate  Float          @default(0)
+  status         TripPlanStatus @default(DRAFT)
+  bookings       Booking[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model Booking {
+  id              String        @id @default(uuid())
+  tripPlanId      String
+  tripPlan        TripPlan      @relation(fields: [tripPlanId], references: [id])
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  type            BookingType
+  status          BookingStatus @default(PENDING)
+  referenceNumber String        @unique
+  details         Json
+  totalAmount     Float
+  currency        String        @default("ZAR")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
